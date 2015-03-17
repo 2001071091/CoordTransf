@@ -1,19 +1,19 @@
-package 
+package  
 {
 	import flash.display.Sprite;
 	import flash.events.Event;
-	import flash.geom.Matrix;
+	import flash.events.MouseEvent;
 	import flash.geom.Matrix3D;
 	import flash.geom.Vector3D;
 	import flash.utils.setInterval;
-	
 	/**
 	 * ...
 	 * @author 
 	 */
-	public class Main extends Sprite 
+	public class Main2 extends Sprite 
 	{
-		public function Main():void 
+		
+		public function Main2():void 
 		{
 			if (stage) init();
 			else addEventListener(Event.ADDED_TO_STAGE, init);
@@ -24,34 +24,51 @@ package
 			// entry point
 			setInterval(loop, 125);
 			
+			stage.addEventListener(MouseEvent.MOUSE_MOVE, onMouseMove);
+		}
+		private function onMouseMove(event:MouseEvent):void {
+			angle = Math.PI * 2 * (stage.mouseX / stage.stageWidth);
+			angle2 =Math.PI * 2 * (stage.mouseY / stage.stageHeight);
 		}
 		
+		private var angle:Number = 0;
+		private var angle2:Number = 0;
 		private function loop():void {
-			draw();
-			//VRP[0] -= 0.2;
-			//VRP[1] -= 0.1;
-			//VPN[0] += 0.01;
-			//PRP[2] += 1;
-		}
+			//angle += 0.1;
+			var r:Number = 84;
+			var y:Number = Math.sin(angle2) * r;
+			var r2:Number = Math.cos(angle2) * r;
+			var x:Number = Math.cos(angle) * r2;
+			var z:Number = Math.sin(angle) * r2;
 			
+			EYE[0] = x;
+			EYE[1] = y;
+			EYE[2] = z;
+			draw();
+		}
+		
 			/**
 			 * 定义VRC,观察坐标系
 			 */
-			var VRP:Array = [0, 0, 54];//投影平面原点(WC)
-			var VPN:Array = [0, 0, 1];//投影平面法线(WC)
+			var EYE:Array = [8, 8, 84];//投影平面原点(WC)
+			var LOOK:Array = [0, 0, 0];//投影平面法线(WC)
 			var VUP:Array = [0, 1, 0];//上方向向量(WC)
+			var FOVY:Number = 60;//视角,ZY平面的视角
+			var ASPECT:Number = 1;//纵横比
+			var Z_Near = 1;
+			var Z_Far = 40;
 			
-			/**
-			 * 定义观察点和窗口大小
-			 */
-			var PRP:Array = [8, 8, 30];//投影中心(VRC)u,v,n
-			var WINDOW:Array = [ -1, 17, -1, 17];//观察窗口的Umin,Umax,Vmin,Vmax(VRC)
-			//var Z_Near = 1;
-			//var Z_Far = 40;
-			
-		private function draw():void 
-		{
-			//WC (word coordinate)世界坐标系
+			private function getAngle(x:Number, y:Number):Number {
+				var a:Number = Math.acos(x / Math.sqrt(x * x +y * y));
+				//3,4象限
+				if (y < 0) {
+					a = Math.PI * 2 - a;
+				}
+				return a * (180 / Math.PI);
+			}
+		
+		private function draw():void {
+//WC (word coordinate)世界坐标系
 			//VRC (viewing-reference coordinate)观察坐标系 由VRP,VPN,VUP构造的一个右手坐标系
 			var points:Array = [
 				new Vector3D(0, 0, 30),
@@ -66,26 +83,32 @@ package
 				new Vector3D(16,0,54)
 			];//模型的顶点坐标(WC)
 			
+			var VPN:Array = [EYE[0] - LOOK[0], EYE[1] - LOOK[1], EYE[2] - LOOK[2]];
+			var top:Number = Math.tan((FOVY / 2) * (Math.PI / 180)) * Z_Near;
+			var WINDOW:Array = [
+			-top*ASPECT//Umin
+			,top*ASPECT//Umax
+			,-top//Vmin
+			,top//Vmax
+			]
+			
+			
 			/**
 			 * 生成世界坐标系到观察坐标系的变换矩阵
 			 */
 			var m:Matrix3D = new Matrix3D();
-			m.appendTranslation( -VRP[0], -VRP[1], -VRP[2]);//平移
-			var a:Number,i:int;
+			m.appendTranslation(-EYE[0], -EYE[1], -EYE[2]);//平移
+			var a:Number, i:int;
 			if (VPN[0] != 0) {//Y轴旋转
-				a = Math.acos(VPN[0] / Math.sqrt(VPN[0] * VPN[0] + VPN[2] * VPN[2])) - Math.PI/2;
-				a *= (180 / Math.PI);
+				a = getAngle(VPN[0], VPN[2]) - 90;
 				m.appendRotation(a, Vector3D.Y_AXIS, null);
 			}
 			if (VPN[2] != 0) {//X轴旋转
-				a = Math.acos(VPN[2] / Math.sqrt(VPN[1] * VPN[1] + VPN[2] * VPN[2]));
-				a *= (180 / Math.PI);
-				if (VPN[1] < 0) {
-					a *= -1;
-				}
+				a = getAngle(Math.sqrt(VPN[0] * VPN[0]+VPN[2] * VPN[2]), VPN[1]);
 				m.appendRotation(a, Vector3D.X_AXIS, null);
 			}
 			//TODO 处理VUP,使用Z轴旋转
+			//VPN叉乘VUP,和VPN叉乘Y轴正方向的两个向量的夹角就是Z轴需要旋转的角度
 			
 			//将模型变换到观察坐标系
 			trace("观察坐标系----------");
@@ -96,14 +119,8 @@ package
 			
 			//生成NDC
 			trace("NDC坐标---------");
-			for (i = 0; i < points.length; i++ ) {
-
-				//按PRPx,y平移
-				points[i].x -= PRP[0];
-				points[i].y -= PRP[1];
-				
-				a = (0 - PRP[2]) / (points[i].z - PRP[2]);
-				
+			for (i = 0; i < points.length; i++ ) {	
+				a = ( -Z_Near) / points[i].z;
 				points[i].x *= a;
 				points[i].y *= a;
 
@@ -162,7 +179,6 @@ package
 			graphics.moveTo(points[4].x, points[4].y);
 			graphics.lineTo(points[9].x, points[9].y);
 		}
-		
 	}
-	
+
 }
