@@ -1,5 +1,7 @@
 package  
 {
+	import flash.display.Bitmap;
+	import flash.display.BitmapData;
 	import flash.display.Sprite;
 	import flash.events.Event;
 	import flash.events.MouseEvent;
@@ -12,7 +14,8 @@ package
 	 */
 	public class Main2 extends Sprite 
 	{
-		
+		private var canvas:Bitmap;
+		private var frameBuffer:BitmapData;
 		public function Main2():void 
 		{
 			if (stage) init();
@@ -20,6 +23,12 @@ package
 		}
 		private function init(e:Event = null):void 
 		{
+			this.canvas = new Bitmap();
+			this.frameBuffer = new BitmapData(stage.stageWidth, stage.stageHeight);
+			this.canvas.bitmapData = frameBuffer;
+			//this.addChild(canvas);
+			
+			
 			removeEventListener(Event.ADDED_TO_STAGE, init);
 			// entry point
 			setInterval(loop, 125);
@@ -31,10 +40,12 @@ package
 			angle2 =Math.PI * 2 * (stage.mouseY / stage.stageHeight);
 		}
 		
-		private var angle:Number = 0;
+		private var angle:Number = Math.PI/2+0.5;
 		private var angle2:Number = 0;
+		private var angle3:Number = 0;
 		private function loop():void {
-			//angle += 0.1;
+			//angle += 0.01;
+			angle3 += 0.1;
 			var r:Number = 84;
 			var y:Number = Math.sin(angle2) * r;
 			var r2:Number = Math.cos(angle2) * r;
@@ -44,6 +55,9 @@ package
 			EYE[0] = x;
 			EYE[1] = y;
 			EYE[2] = z;
+			
+			VUP[0] = Math.cos(angle3);
+			VUP[1] = Math.sin(angle3);
 			draw();
 		}
 		
@@ -57,6 +71,26 @@ package
 			var ASPECT:Number = 1;//纵横比
 			var Z_Near = 1;
 			var Z_Far = 40;
+			
+			private function getVectorAngle(_v1:Vector3D, _v2:Vector3D):Number {
+				var v1:Vector3D = _v1.clone();
+				var v2:Vector3D = _v2.clone();
+				v1.normalize(); v2.normalize();
+				if (v1.equals(v2)) return 0;
+				var cos:Number = v1.dotProduct(v2);//点乘获得夹角的cos
+				if (cos > 1) cos = 1;
+				//处理角度大于180的情况
+				//计算平面函数的参数a和b,ax+by+z=0
+				var b:Number = (v1.z * v2.x - v2.z * v1.x) / (v2.y * v1.x - v1.y * v2.x);
+				var a:Number = -(b * v1.y + v1.z) / v1.x;
+				var v3:Vector3D = v1.crossProduct(v2);
+				var tmp:Number = a * v3.x + b * v3.y + v3.z;
+				var result:Number = Math.acos(cos);
+				if (tmp < 0) {
+					result = Math.PI * 2 - result;
+				}
+				return result * (180 / Math.PI);
+			}
 			
 			private function getAngle(x:Number, y:Number):Number {
 				var a:Number = Math.acos(x / Math.sqrt(x * x +y * y));
@@ -99,6 +133,7 @@ package
 			var m:Matrix3D = new Matrix3D();
 			m.appendTranslation(-EYE[0], -EYE[1], -EYE[2]);//平移
 			var a:Number, i:int;
+			
 			if (VPN[0] != 0) {//Y轴旋转
 				a = getAngle(VPN[0], VPN[2]) - 90;
 				m.appendRotation(a, Vector3D.Y_AXIS, null);
@@ -109,16 +144,24 @@ package
 			}
 			//TODO 处理VUP,使用Z轴旋转
 			//VPN叉乘VUP,和VPN叉乘Y轴正方向的两个向量的夹角就是Z轴需要旋转的角度
+			var vup_v:Vector3D = new Vector3D(VUP[0], VUP[1], VUP[2]);
+			var vpn_v:Vector3D = new Vector3D(VPN[0], VPN[1], VPN[2]);
+			vup_v.normalize();vpn_v.normalize();
+			var v1:Vector3D = vpn_v.crossProduct(vup_v);
+			var v2:Vector3D = vpn_v.crossProduct(Vector3D.Y_AXIS);
+			a = getVectorAngle(v1, v2);
+			m.appendRotation(a, Vector3D.Z_AXIS, null);
+			
 			
 			//将模型变换到观察坐标系
-			trace("观察坐标系----------");
+			//trace("观察坐标系----------");
 			for (i = 0; i < points.length; i++ ) {
 				points[i] = m.transformVector(points[i]);
-				trace("point["+i+"]:"+points[i]);
+				//trace("point["+i+"]:"+points[i]);
 			}
 			
 			//生成NDC
-			trace("NDC坐标---------");
+			//trace("NDC坐标---------");
 			for (i = 0; i < points.length; i++ ) {	
 				a = ( -Z_Near) / points[i].z;
 				points[i].x *= a;
@@ -128,16 +171,18 @@ package
 				//规格化
 				points[i].x /= (WINDOW[1] - WINDOW[0]) / 2;
 				points[i].y /= (WINDOW[3] - WINDOW[2]) / 2;
-				trace("point[" + i + "]:" + points[i]);
+				//trace("point[" + i + "]:" + points[i]);
 			}
 			
 			//NDC到视口
-			trace("视口坐标---------");
-			var viewport:Array = [100, 100, 200, 200];
+			//trace("视口坐标---------");
+			var viewport:Array = [100, 100, 400, 400];
 			for (i = 0; i < points.length; i++ ) {
 				points[i].x = points[i].x * (viewport[2] / 2) + (viewport[2] / 2) + viewport[0];
 				points[i].y = -points[i].y * (viewport[3] / 2) + (viewport[3] / 2) + viewport[1];
-				trace("point[" + i + "]:" + points[i]);
+				//points[i].x = Math.round(points[i].x);
+				//points[i].y = Math.round(points[i].y);
+				//trace("point[" + i + "]:" + points[i]);
 			}
 			
 			//绘制
